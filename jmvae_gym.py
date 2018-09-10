@@ -202,16 +202,16 @@ class JmvaeGym(DataLoader):
         # reward
         sigma_old = np.linalg.norm(np.sqrt(self.environment[action, self.var_idx]), 2)
         sigma_new = np.linalg.norm(np.sqrt(next_environment[action, self.var_idx]), 2)
-        information_old = 1 / sigma_old
+        information_old = 1 / sigma_old if sigma_old != 0 else 0
         information_new = 1 / sigma_new
         information_tmp = information_new - information_old
         if self.has_distance:
             dist = self.obj_distance[self._get_position()] # get distance from current position to action poi
         if action == self._get_position() and self.has_distance: # this should be a NOP and gets punished
-                reward = -0.25
+                reward = -0.5
         else:
-            if information_tmp < 0.01:  # we just have to shift the expected average reward a little bit
-                reward = information_tmp if self.has_distance else -1.
+            if information_tmp < 0.15:  # we just have to shift the expected average reward a little bit
+                reward = -np.abs(information_tmp) if self.has_distance else -1.
             else:
                 reward = information_tmp + (1-dist) if self.has_distance else information_tmp
         # done?
