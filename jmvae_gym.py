@@ -17,13 +17,13 @@ class DataLoader:
         # Load and prepare the data
         data = np.load(filename)
         print(data.keys())
-        self.z_w_var = data['z_w_var']
+        self.z_w_var = data['z_w_var'] # are actually elbos
         self.z_x_mean = data['z_x_mean']
         self.x = data['x']
         self.w = data['w']
-        self.z_x_var = data['z_x_var']
+        self.z_x_var = data['z_x_var'] # are actually elbos
         self.z_xw_mean = data['z_xw_mean']
-        self.z_xw_var = data['z_xw_var']
+        self.z_xw_var = data['z_xw_var'] # are actually elbos
         self.label = data['label']
         self.info = data['info']
         self.z_w_mean = data['z_w_mean']
@@ -41,7 +41,7 @@ class DataLoader:
 
 class JmvaeGym(DataLoader):
     def __init__(self, name, modality, permutate=False, has_distance=False):
-        super(JmvaeGym, self).__init__('./xwz_set.npz')  # Load the data
+        super(JmvaeGym, self).__init__('./xwz_set_new.npz')  # Load the data
         self.name = name
         # Quantities
         self.statistics = 2  # mu and sigma
@@ -60,7 +60,7 @@ class JmvaeGym(DataLoader):
         # Environment
         self.environment = np.zeros((self.poi, self.D_z * self.statistics), dtype = np.float32)
         self.uninformed_mean = np.float32(0.0)
-        self.uninformed_var = np.float32(20.)
+        self.uninformed_var = np.float32(2.)
         self.permutate = permutate  # permutate the PoI arrangements
         if not (modality == 'x' or modality == 'w'):
             raise Exception('modality needs to be x or w')
@@ -114,14 +114,14 @@ class JmvaeGym(DataLoader):
         environment = np.zeros((self.D_z * self.statistics), dtype = np.float32)  # (mu_1, sigma_1), ..., (mu_Dz, sigma_Dz)
         sample_idx = self.sample_idx_from_label(poi)
         if modalities == 'x':
-            environment[0], environment[1] = self.z_x_mean[sample_idx, 0], self.z_x_var[sample_idx, 0]
-            environment[2], environment[3] = self.z_x_mean[sample_idx, 1], self.z_x_var[sample_idx, 1]
+            environment[0], environment[1] = self.z_x_mean[sample_idx, 0], self.z_x_var[sample_idx] # are actually elbos # HACK
+            environment[2], environment[3] = self.z_x_mean[sample_idx, 1], self.z_x_var[sample_idx] # are actually elbos # HACK
         elif modalities == 'w':
-            environment[0], environment[1] = self.z_w_mean[sample_idx, 0], self.z_w_var[sample_idx, 0]
-            environment[2], environment[3] = self.z_w_mean[sample_idx, 1], self.z_w_var[sample_idx, 1]
+            environment[0], environment[1] = self.z_w_mean[sample_idx, 0], self.z_w_var[sample_idx] # are actually elbos # HACK
+            environment[2], environment[3] = self.z_w_mean[sample_idx, 1], self.z_w_var[sample_idx] # are actually elbos # HACK
         elif modalities == 'xw':
-            environment[0], environment[1] = self.z_xw_mean[sample_idx, 0], self.z_xw_var[sample_idx, 0]
-            environment[2], environment[3] = self.z_xw_mean[sample_idx, 1], self.z_xw_var[sample_idx, 1]
+            environment[0], environment[1] = self.z_xw_mean[sample_idx, 0], self.z_xw_var[sample_idx] # are actually elbos # HACK
+            environment[2], environment[3] = self.z_xw_mean[sample_idx, 1], self.z_xw_var[sample_idx] # are actually elbos # HACK
         return environment
 
     def _get_lookup_poi(self, idx_poi):
@@ -149,8 +149,12 @@ class JmvaeGym(DataLoader):
             self._update_position(np.random.randint(self.poi)) # sample current position
         # sample the already seen PoIs
         self.xw_seen = self._sample_seen()
-        while np.all(self.xw_seen) or np.all(~self.xw_seen):
-            self.xw_seen = self._sample_seen()
+        if self.modality == 'x':
+            while np.all(self.xw_seen[:,0]):
+                self.xw_seen = self._sample_seen()
+        if self.modality == 'w':
+            while np.all(self.xw_seen[:,1]):
+                self.xw_seen = self._sample_seen()
         # Sample the permutation (usage TBD)
         self._sample_permutation()
         # Do the encoding wrt. the permutation
@@ -200,18 +204,16 @@ class JmvaeGym(DataLoader):
         next_environment[action, :] = np.copy(current_next_environment)
         self.xw_seen[action, :] = np.copy(current_xw_seen)
         # reward
-        sigma_old = np.linalg.norm(np.sqrt(self.environment[action, self.var_idx]), 2)
-        sigma_new = np.linalg.norm(np.sqrt(next_environment[action, self.var_idx]), 2)
-        information_old = 1 / sigma_old if sigma_old != 0 else 0
-        information_new = 1 / sigma_new
-        information_tmp = information_new - information_old
+        elbo_old = np.mean(self.environment[action, self.var_idx])
+        elbo_new = np.mean(next_environment[action, self.var_idx])
+        information_tmp = elbo_old - elbo_new
         if self.has_distance:
             dist = self.obj_distance[self._get_position()] # get distance from current position to action poi
         if action == self._get_position() and self.has_distance: # this should be a NOP and gets punished
                 reward = -0.5
         else:
-            if information_tmp < 0.15:  # we just have to shift the expected average reward a little bit
-                reward = -np.abs(information_tmp) if self.has_distance else -1.
+            if information_tmp < 0.01: #0.15 # we just have to shift the expected average reward a little bit
+                reward = -2#-np.abs(information_tmp) #if self.has_distance else -1.
             else:
                 reward = information_tmp + (1-dist) if self.has_distance else information_tmp
         # done?
