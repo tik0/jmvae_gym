@@ -174,8 +174,13 @@ class JmvaeGym(DataLoader):
                 self.environment[current_poi, 3] = self.uninformed_var  # sigma_2
 
     def step(self, action):
-        if action == self.action_space:  # NOP terminating condition
-            return self.get_state(), 0, True, {}
+        if action == self.action_space: # NOP terminating condition
+            if self.modality == 'x' and (not self.xw_seen[self._get_reverse_lookup_poi(0)][0] or not self.xw_seen[self._get_reverse_lookup_poi(2)][0]):
+                return self.get_state(), -1, True, {}
+            elif self.modality == 'w' and (not self.xw_seen[self._get_reverse_lookup_poi(0)][1] or not self.xw_seen[self._get_reverse_lookup_poi(1)][1]):
+                return self.get_state(), -1, True, {}
+            else:
+                return self.get_state(), 0, True, {}
         if action > self.action_space and action < 0:
             raise Exception('action needs to be within the action space')
         next_environment = np.copy(self.environment)  # local copy
@@ -206,14 +211,18 @@ class JmvaeGym(DataLoader):
         # reward
         elbo_old = np.mean(self.environment[action, self.var_idx])
         elbo_new = np.mean(next_environment[action, self.var_idx])
+        #print("sigma_old:", sigma_old, "sigma_new:", sigma_new)
+        #information_old = 1 / sigma_old if sigma_old != 0 else 0
+        #information_new = 1 / sigma_new
         information_tmp = elbo_old - elbo_new
+        #print("information_old:", information_old, "information_new:", information_new, "information_tmp:", information_tmp)
         if self.has_distance:
             dist = self.obj_distance[self._get_position()] # get distance from current position to action poi
         if action == self._get_position() and self.has_distance: # this should be a NOP and gets punished
                 reward = -0.5
         else:
-            if information_tmp < 0.01: #0.15 # we just have to shift the expected average reward a little bit
-                reward = -2#-np.abs(information_tmp) #if self.has_distance else -1.
+            if information_tmp < 0.1: #0.01 # we just have to shift the expected average reward a little bit
+                reward = -1 #-np.abs(information_tmp) #if self.has_distance else -1.
             else:
                 reward = information_tmp + (1-dist) if self.has_distance else information_tmp
         # done?
